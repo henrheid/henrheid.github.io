@@ -12,6 +12,7 @@ const resultsEl = document.getElementById('results');
 const backdropEl = document.getElementById('test-strings-backdrop');
 const highlightsEl = document.getElementById('test-strings-highlights');
 const lineNumbersEl = document.getElementById('line-numbers');
+const sessionTitleEl = document.getElementById('session-title');
 
 let regexRows = [];
 
@@ -326,6 +327,7 @@ function runAll() {
 
   updateHighlights(compiled);
   updateLineNumbers();
+  localStorage.setItem('state', buildExportJSON());
 
   const lines = testStringsEl.value.split('\n');
   if (lines.length === 1 && lines[0] === '') {
@@ -415,49 +417,288 @@ document.getElementById('copy-test-strings').addEventListener('click', () => {
   });
 });
 
-// --- Export ---
-const exportBtn = document.getElementById('export-btn');
-const exportPanel = document.getElementById('export-panel');
-const exportTextarea = document.getElementById('export-textarea');
+// --- JSON panel ---
+const jsonToggle = document.getElementById('json-toggle');
+const jsonTextarea = document.getElementById('json-textarea');
+const jsonApplyBtn = document.getElementById('json-apply');
+const jsonRefreshBtn = document.getElementById('json-refresh');
+const jsonCopyBtn = document.getElementById('json-copy');
+const jsonControls = [jsonApplyBtn, jsonRefreshBtn, jsonCopyBtn];
 
-exportBtn.addEventListener('click', () => {
-  const isOpen = !exportPanel.hidden;
-  if (isOpen) {
-    exportPanel.hidden = true;
-    exportBtn.classList.remove('active');
-    return;
-  }
-
-  const data = {
+function buildExportJSON() {
+  const obj = {
     regexes: regexRows.map((entry, i) => {
-      const obj = { number: i + 1, pattern: entry.pattern.value, flags: entry.flags.value };
-      if (entry.nameInput.value) obj.name = entry.nameInput.value;
-      return obj;
+      const o = { number: i + 1, pattern: entry.pattern.value, flags: entry.flags.value };
+      if (entry.nameInput.value) o.name = entry.nameInput.value;
+      return o;
     }),
     testStrings: testStringsEl.value.split('\n'),
   };
+  if (sessionTitleEl.value) obj.title = sessionTitleEl.value;
+  return JSON.stringify(obj, null, 2);
+}
 
-  exportTextarea.value = JSON.stringify(data, null, 2);
-  exportPanel.hidden = false;
-  exportBtn.classList.add('active');
+jsonToggle.addEventListener('click', () => {
+  const opening = jsonTextarea.hidden;
+  if (opening) {
+    jsonTextarea.value = buildExportJSON();
+    jsonTextarea.hidden = false;
+    autoResizeTextarea(jsonTextarea);
+    jsonControls.forEach(el => el.hidden = false);
+    jsonToggle.classList.add('open');
+  } else {
+    jsonTextarea.hidden = true;
+    jsonControls.forEach(el => el.hidden = true);
+    jsonToggle.classList.remove('open');
+  }
 });
 
-document.getElementById('copy-export').addEventListener('click', () => {
-  const btn = document.getElementById('copy-export');
-  navigator.clipboard.writeText(exportTextarea.value).then(() => {
-    btn.classList.add('copied');
-    setTimeout(() => btn.classList.remove('copied'), 1000);
+jsonRefreshBtn.addEventListener('click', () => {
+  jsonTextarea.value = buildExportJSON();
+  autoResizeTextarea(jsonTextarea);
+});
+
+jsonApplyBtn.addEventListener('click', () => {
+  let data;
+  try {
+    data = JSON.parse(jsonTextarea.value);
+  } catch (e) {
+    alert('Invalid JSON: ' + e.message);
+    return;
+  }
+
+  // Clear existing rows
+  for (const entry of regexRows) {
+    entry.row.remove();
+    if (entry.errorEl) entry.errorEl.remove();
+  }
+  regexRows = [];
+
+  // Create rows from imported data
+  for (const r of data.regexes) {
+    const entry = createRegexRow();
+    entry.pattern.value = r.pattern || '';
+    entry.flags.value = r.flags || '';
+    if (r.name) {
+      entry.nameInput.value = r.name;
+      entry.nameInput.classList.add('has-value');
+    }
+    autoResizeTextarea(entry.pattern);
+  }
+
+  // If any regex has a name but names are hidden, show them
+  if (regexList.classList.contains('names-hidden') && data.regexes.some(r => r.name)) {
+    regexList.classList.remove('names-hidden');
+    toggleNamesBtn.classList.add('active');
+    localStorage.setItem('names', 'true');
+  }
+
+  if (data.title !== undefined) {
+    sessionTitleEl.value = data.title;
+    sessionTitleEl.classList.toggle('has-value', !!data.title);
+  }
+
+  testStringsEl.value = (data.testStrings || []).join('\n');
+  runAll();
+
+  jsonTextarea.hidden = true;
+  jsonControls.forEach(el => el.hidden = true);
+  jsonToggle.classList.remove('open');
+});
+
+jsonCopyBtn.addEventListener('click', () => {
+  navigator.clipboard.writeText(jsonTextarea.value).then(() => {
+    jsonCopyBtn.classList.add('copied');
+    setTimeout(() => jsonCopyBtn.classList.remove('copied'), 1000);
   });
 });
 
 // --- Names toggle ---
 const toggleNamesBtn = document.getElementById('toggle-names');
-regexList.classList.add('names-hidden');
+
+if (localStorage.getItem('names') === 'true') {
+  toggleNamesBtn.classList.add('active');
+} else {
+  regexList.classList.add('names-hidden');
+}
 
 toggleNamesBtn.addEventListener('click', () => {
-  const showing = regexList.classList.toggle('names-hidden');
-  toggleNamesBtn.classList.toggle('active', !showing);
+  const hidden = regexList.classList.toggle('names-hidden');
+  toggleNamesBtn.classList.toggle('active', !hidden);
+  localStorage.setItem('names', !hidden);
 });
 
-// start with one empty row
-createRegexRow();
+// --- Sessions ---
+const newSessionBtn = document.getElementById('new-session-btn');
+const sessionMenuBtn = document.getElementById('session-menu-btn');
+const sessionMenu = document.getElementById('session-menu');
+
+let activeSessionId = localStorage.getItem('activeSessionId');
+if (!activeSessionId) {
+  activeSessionId = generateId();
+  localStorage.setItem('activeSessionId', activeSessionId);
+}
+
+function generateId() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+}
+
+function getSessions() {
+  try { return JSON.parse(localStorage.getItem('sessions')) || []; }
+  catch { return []; }
+}
+
+function saveCurrentSession() {
+  const raw = localStorage.getItem('state');
+  if (!raw) return;
+  let data;
+  try { data = JSON.parse(raw); } catch { return; }
+  data.id = activeSessionId;
+  const sessions = getSessions();
+  const idx = sessions.findIndex(s => s.id === activeSessionId);
+  if (idx >= 0) sessions[idx] = data;
+  else sessions.push(data);
+  localStorage.setItem('sessions', JSON.stringify(sessions));
+}
+
+function loadSessionData(data) {
+  for (const entry of regexRows) {
+    entry.row.remove();
+    if (entry.errorEl) entry.errorEl.remove();
+  }
+  regexRows = [];
+
+  sessionTitleEl.value = data.title || '';
+  sessionTitleEl.classList.toggle('has-value', !!data.title);
+
+  for (const r of (data.regexes || [])) {
+    const entry = createRegexRow();
+    entry.pattern.value = r.pattern || '';
+    entry.flags.value = r.flags || '';
+    if (r.name) {
+      entry.nameInput.value = r.name;
+      entry.nameInput.classList.add('has-value');
+    }
+    autoResizeTextarea(entry.pattern);
+  }
+  if (regexRows.length === 0) createRegexRow();
+
+  testStringsEl.value = (data.testStrings || []).join('\n');
+  runAll();
+}
+
+sessionTitleEl.addEventListener('input', () => {
+  sessionTitleEl.classList.toggle('has-value', sessionTitleEl.value.length > 0);
+  runAll();
+});
+
+newSessionBtn.addEventListener('click', () => {
+  saveCurrentSession();
+  activeSessionId = generateId();
+  localStorage.setItem('activeSessionId', activeSessionId);
+  loadSessionData({});
+});
+
+sessionMenuBtn.addEventListener('click', () => {
+  if (!sessionMenu.hidden) {
+    sessionMenu.hidden = true;
+    return;
+  }
+
+  saveCurrentSession();
+  const sessions = getSessions();
+  sessionMenu.innerHTML = '';
+
+  if (sessions.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'session-menu-empty';
+    empty.textContent = 'No saved sessions';
+    sessionMenu.appendChild(empty);
+  } else {
+    for (const s of sessions) {
+      const item = document.createElement('div');
+      item.className = 'session-menu-item';
+      if (s.id === activeSessionId) item.classList.add('active');
+
+      const label = document.createElement('span');
+      label.className = 'session-menu-label';
+      label.textContent = s.title || 'Untitled';
+      item.appendChild(label);
+
+      if (s.id !== activeSessionId) {
+        const del = document.createElement('button');
+        del.className = 'session-delete-btn';
+        del.textContent = '\u00d7';
+        del.title = 'Delete session';
+        del.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const updated = getSessions().filter(x => x.id !== s.id);
+          localStorage.setItem('sessions', JSON.stringify(updated));
+          sessionMenu.hidden = true;
+        });
+        item.appendChild(del);
+      }
+
+      item.addEventListener('click', () => {
+        if (s.id === activeSessionId) {
+          sessionMenu.hidden = true;
+          return;
+        }
+        activeSessionId = s.id;
+        localStorage.setItem('activeSessionId', s.id);
+        loadSessionData(s);
+        sessionMenu.hidden = true;
+      });
+
+      sessionMenu.appendChild(item);
+    }
+  }
+
+  sessionMenu.hidden = false;
+});
+
+document.addEventListener('click', (e) => {
+  if (!sessionMenu.hidden && !sessionMenu.contains(e.target) && !sessionMenuBtn.contains(e.target)) {
+    sessionMenu.hidden = true;
+  }
+});
+
+window.addEventListener('beforeunload', saveCurrentSession);
+
+// --- Dark mode ---
+const darkToggle = document.getElementById('dark-toggle');
+
+if (localStorage.getItem('dark') === 'true') {
+  document.body.classList.add('dark');
+  darkToggle.checked = true;
+}
+
+darkToggle.addEventListener('change', () => {
+  document.body.classList.toggle('dark', darkToggle.checked);
+  localStorage.setItem('dark', darkToggle.checked);
+});
+
+// Restore saved state or start with one empty row
+const saved = localStorage.getItem('state');
+if (saved) {
+  try {
+    const data = JSON.parse(saved);
+    sessionTitleEl.value = data.title || '';
+    sessionTitleEl.classList.toggle('has-value', !!data.title);
+    for (const r of (data.regexes || [])) {
+      const entry = createRegexRow();
+      entry.pattern.value = r.pattern || '';
+      entry.flags.value = r.flags || '';
+      if (r.name) {
+        entry.nameInput.value = r.name;
+        entry.nameInput.classList.add('has-value');
+      }
+      autoResizeTextarea(entry.pattern);
+    }
+    testStringsEl.value = (data.testStrings || []).join('\n');
+  } catch (e) {
+    // ignore corrupt data
+  }
+}
+if (regexRows.length === 0) createRegexRow();
+runAll();
