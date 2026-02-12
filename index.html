@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rexer — Regex Tester</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: system-ui, -apple-system, sans-serif;
+    background: #f5f5f5;
+    color: #222;
+    line-height: 1.5;
+    padding: 2rem 1rem;
+  }
+
+  .container {
+    max-width: 2000px;
+    margin: 0 auto;
+  }
+
+  h1 {
+    font-size: 1.6rem;
+    margin-bottom: 1.5rem;
+  }
+
+  h2 {
+    font-size: 1.1rem;
+    margin-bottom: 0.5rem;
+    color: #444;
+  }
+
+  section {
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    padding: 1rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .main-layout {
+    display: grid;
+    grid-template-columns: 1fr 600px;
+    gap: 1.5rem;
+  }
+
+  .left-panel > section:last-child {
+    margin-bottom: 0;
+  }
+
+  .right-panel > section {
+    margin-bottom: 0;
+    position: sticky;
+    top: 1rem;
+  }
+
+  @media (max-width: 768px) {
+    .main-layout {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  /* Regex rows */
+  .regex-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .regex-number {
+    font-family: monospace;
+    font-size: 0.8rem;
+    font-weight: 700;
+    flex-shrink: 0;
+    margin-top: 0.45rem;
+  }
+
+  .regex-row .color-indicator {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    margin-top: 0.55rem;
+  }
+
+  .regex-row input.name {
+    width: 6rem;
+    font-family: monospace;
+    font-size: 0.95rem;
+    padding: 0.35rem 0.5rem;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    margin-top: 0.05rem;
+    background: transparent;
+    opacity: 0;
+    transition: opacity 0.15s;
+  }
+
+  .regex-row:hover input.name,
+  .regex-row input.name:focus {
+    opacity: 1;
+  }
+
+  .regex-row input.name:focus {
+    border-color: #ccc;
+  }
+
+  .regex-row input.name.has-value {
+    opacity: 1;
+  }
+
+  .regex-row textarea.pattern {
+    flex: 1;
+    font-family: monospace;
+    font-size: 0.95rem;
+    line-height: 1.5;
+    padding: 0.35rem 0.5rem;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    resize: none;
+    overflow: hidden;
+  }
+
+  .regex-row input.flags {
+    width: 3.5rem;
+    font-family: monospace;
+    font-size: 0.95rem;
+    padding: 0.35rem 0.5rem;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    text-align: center;
+    margin-top: 0.05rem;
+  }
+
+  .regex-row .error {
+    border-color: #d32f2f;
+    background: #fff5f5;
+  }
+
+  .regex-row .remove-btn {
+    background: none;
+    border: none;
+    font-size: 1.1rem;
+    cursor: pointer;
+    color: #999;
+    padding: 0 0.3rem;
+    line-height: 1;
+    margin-top: 0.4rem;
+  }
+
+  .regex-row .remove-btn:hover { color: #d32f2f; }
+
+  .copy-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: #999;
+    padding: 0 0.3rem;
+    line-height: 1;
+    flex-shrink: 0;
+  }
+
+  .regex-row .copy-btn {
+    margin-top: 0.4rem;
+  }
+
+  .copy-btn:hover { color: #1e88e5; }
+  .copy-btn.copied { color: #43a047; }
+
+  .section-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .section-header h2 { margin-bottom: 0; }
+
+  .toggle-btn {
+    font-size: 0.75rem;
+    padding: 0.15rem 0.5rem;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    background: #fafafa;
+    color: #999;
+    cursor: pointer;
+  }
+
+  .toggle-btn:hover { background: #eee; }
+
+  .toggle-btn.active {
+    background: #e3f2fd;
+    border-color: #90caf9;
+    color: #1e88e5;
+  }
+
+  .names-hidden input.name {
+    display: none;
+  }
+
+  .regex-error {
+    color: #d32f2f;
+    font-size: 0.8rem;
+    margin: -0.3rem 0 0.4rem 1.5rem;
+  }
+
+  #add-regex {
+    margin-top: 0.25rem;
+    padding: 0.3rem 0.75rem;
+    font-size: 0.85rem;
+    cursor: pointer;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    background: #fafafa;
+  }
+
+  #add-regex:hover { background: #eee; }
+
+  /* Editor wrapper with line numbers */
+  .editor-wrapper {
+    display: flex;
+    position: relative;
+  }
+
+  .line-numbers {
+    width: 2.5rem;
+    font-family: monospace;
+    font-size: 0.95rem;
+    line-height: 1.5;
+    padding: 0.5rem 0.5rem 0.5rem 0;
+    text-align: right;
+    color: #999;
+    user-select: none;
+    overflow: hidden;
+    border-right: 1px solid #e0e0e0;
+    flex-shrink: 0;
+    background: #f8f8f8;
+  }
+
+  /* Highlight container — stacks backdrop behind textarea */
+  .highlight-container {
+    display: grid;
+    position: relative;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .highlight-container > * {
+    grid-area: 1 / 1;
+  }
+
+  .highlight-backdrop {
+    overflow: hidden;
+    pointer-events: none;
+    z-index: 0;
+    border: 1px solid transparent;
+    border-radius: 4px;
+  }
+
+  .highlight-content {
+    font-family: monospace;
+    font-size: 0.95rem;
+    line-height: 1.5;
+    padding: 0.5rem;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    color: transparent;
+  }
+
+  /* Test strings */
+  #test-strings {
+    width: 100%;
+    min-height: 36rem;
+    font-family: monospace;
+    font-size: 0.95rem;
+    line-height: 1.5;
+    padding: 0.5rem;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    resize: vertical;
+    background: transparent;
+    position: relative;
+    z-index: 1;
+  }
+
+  .hint {
+    font-size: 0.8rem;
+    color: #888;
+    margin-bottom: 0.4rem;
+  }
+
+  /* Results */
+  .result-card {
+    border: 1px solid #e0e0e0;
+    border-radius: 4px;
+    padding: 0.75rem;
+    margin-bottom: 0.75rem;
+    background: #fafafa;
+  }
+
+  .result-card:last-child { margin-bottom: 0; }
+
+  .result-string {
+    font-family: monospace;
+    font-size: 0.95rem;
+    font-weight: 600;
+    margin-bottom: 0.4rem;
+    word-break: break-all;
+  }
+
+  .no-match {
+    color: #999;
+    font-size: 0.85rem;
+    font-style: italic;
+  }
+
+  .match-block {
+    margin-bottom: 0.5rem;
+    padding-left: 0.5rem;
+    border-left: 3px solid;
+  }
+
+  .match-block:last-child { margin-bottom: 0; }
+
+  .match-header {
+    font-size: 0.85rem;
+    font-family: monospace;
+    margin-bottom: 0.2rem;
+  }
+
+  .match-header .regex-label {
+    font-weight: 600;
+  }
+
+  .match-full {
+    font-family: monospace;
+    font-size: 0.9rem;
+    background: #eee;
+    padding: 0.15rem 0.4rem;
+    border-radius: 3px;
+    display: inline-block;
+    margin-bottom: 0.2rem;
+  }
+
+  .groups-table {
+    font-size: 0.82rem;
+    font-family: monospace;
+    margin-top: 0.2rem;
+  }
+
+  .groups-table dt {
+    display: inline;
+    font-weight: 600;
+    color: #555;
+  }
+
+  .groups-table dt::after { content: ": "; }
+
+  .groups-table dd {
+    display: inline;
+    margin: 0;
+    background: #e8e8e8;
+    padding: 0.05rem 0.3rem;
+    border-radius: 2px;
+  }
+
+  .groups-table .group-entry { margin-bottom: 0.15rem; }
+
+  .empty-results {
+    color: #999;
+    font-size: 0.9rem;
+    font-style: italic;
+  }
+
+  /* Export panel */
+  .export-panel {
+    margin-top: 1rem;
+    border-top: 1px solid #e0e0e0;
+    padding-top: 0.75rem;
+  }
+
+  .export-textarea {
+    width: 100%;
+    min-height: 8rem;
+    font-family: monospace;
+    font-size: 0.85rem;
+    line-height: 1.4;
+    padding: 0.5rem;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    background: #f8f8f8;
+    resize: vertical;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Rexer</h1>
+
+  <div class="main-layout">
+    <div class="left-panel">
+      <section>
+        <div class="section-header">
+          <h2>Regexes</h2>
+          <button class="toggle-btn" id="toggle-names" title="Toggle regex names">Names</button>
+          <button class="toggle-btn" id="export-btn" title="Export as JSON">Export</button>
+        </div>
+        <div id="regex-list"></div>
+        <button id="add-regex">Add Regex</button>
+        <div class="export-panel" id="export-panel" hidden>
+          <div class="section-header">
+            <h2>Export</h2>
+            <button class="copy-btn" id="copy-export" title="Copy to clipboard">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="5" width="9" height="9" rx="1"/><path d="M3 11V3a1 1 0 011-1h8"/></svg>
+            </button>
+          </div>
+          <textarea class="export-textarea" id="export-textarea" readonly spellcheck="false"></textarea>
+        </div>
+      </section>
+
+      <section>
+        <div class="section-header">
+          <h2>Test Strings</h2>
+          <button class="copy-btn" id="copy-test-strings" title="Copy to clipboard">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="5" width="9" height="9" rx="1"/><path d="M3 11V3a1 1 0 011-1h8"/></svg>
+          </button>
+        </div>
+        <p class="hint">One per line</p>
+        <div class="editor-wrapper">
+          <div class="line-numbers" id="line-numbers"></div>
+          <div class="highlight-container">
+            <div class="highlight-backdrop" id="test-strings-backdrop">
+              <div class="highlight-content" id="test-strings-highlights"></div>
+            </div>
+            <textarea id="test-strings" spellcheck="false"></textarea>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <div class="right-panel">
+      <section>
+        <h2>Results</h2>
+        <div id="results"><p class="empty-results">Enter regexes and test strings above.</p></div>
+      </section>
+    </div>
+  </div>
+</div>
+<script src="rexer.js"></script>
+</body>
+</html>
